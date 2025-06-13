@@ -1,25 +1,38 @@
 import { useState } from 'react';
 import { Box, Heading, FormControl, FormLabel, Input, Button, Text, Link as ChakraLink } from '@chakra-ui/react';
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import { useAuth } from '../context/AuthContext';
+import { useToast } from '@chakra-ui/react';
 
 function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const navigate = useNavigate();
+  const { login } = useAuth();
+  const toast = useToast();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const response = await axios.post('/api/auth/login', {
-        email,
-        senha: password,
+      await login(email, password);
+      toast({
+        title: 'Login realizado com sucesso!',
+        description: 'Bem-vindo de volta!',
+        status: 'success',
+        duration: 3000,
+        isClosable: true,
       });
-      localStorage.setItem('token', response.data.token);
-      navigate('/'); // Redireciona para a página inicial após o login
+      navigate('/');
     } catch (err) {
       setError(err.response?.data?.message || 'Erro ao fazer login. Tente novamente.');
+      toast({
+        title: 'Erro ao fazer login',
+        description: err.response?.data?.message || 'Erro ao fazer login. Tente novamente.',
+        status: 'error',
+        duration: 5000,
+        isClosable: true,
+      });
     }
   };
 

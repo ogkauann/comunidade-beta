@@ -5,7 +5,7 @@ import { useNavigate, Link as RouterLink } from 'react-router-dom';
 import axios from 'axios';
 
 function RoomsPage() {
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
 
@@ -24,7 +24,11 @@ function RoomsPage() {
 
   const fetchRooms = async () => {
     try {
-      const response = await axios.get('/api/rooms');
+      const response = await axios.get('/api/rooms', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
       setRooms(response.data);
     } catch (error) {
       toast({
@@ -44,6 +48,10 @@ function RoomsPage() {
         name: newRoomName,
         description: newRoomDescription,
         type: newRoomType,
+      }, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
       });
       setRooms([...rooms, response.data]);
       setNewRoomName('');
@@ -68,7 +76,11 @@ function RoomsPage() {
 
   const handleJoinRoom = async (roomId) => {
     try {
-      await axios.post(`/api/rooms/${roomId}/join`);
+      await axios.post(`/api/rooms/${roomId}/join`, {}, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
       toast({
         title: 'Você entrou na sala!',
         status: 'success',

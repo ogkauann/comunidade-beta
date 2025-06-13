@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Box, Heading, FormControl, FormLabel, Input, Button, Text, Link as ChakraLink } from '@chakra-ui/react';
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import { useAuth } from '../context/AuthContext';
+import { useToast } from '@chakra-ui/react';
 
 function Register() {
   const [name, setName] = useState('');
@@ -9,19 +10,30 @@ function Register() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const navigate = useNavigate();
+  const { register } = useAuth();
+  const toast = useToast();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const response = await axios.post('/api/auth/register', {
-        nome: name,
-        email,
-        senha: password,
+      await register(name, email, password);
+      toast({
+        title: 'Conta criada com sucesso!',
+        description: 'Bem-vindo à nossa comunidade!',
+        status: 'success',
+        duration: 3000,
+        isClosable: true,
       });
-      localStorage.setItem('token', response.data.token);
-      navigate('/'); // Redireciona para a página inicial após o registro
+      navigate('/');
     } catch (err) {
       setError(err.response?.data?.message || 'Erro ao registrar. Tente novamente.');
+      toast({
+        title: 'Erro ao criar conta',
+        description: err.response?.data?.message || 'Erro ao registrar. Tente novamente.',
+        status: 'error',
+        duration: 5000,
+        isClosable: true,
+      });
     }
   };
 

@@ -4,7 +4,7 @@ const roomService = require('../services/roomService');
 const auth = require('../middleware/auth'); // Assumindo que você tem um middleware de autenticação
 
 // Rota para criar uma nova sala
-router.post('/rooms', auth, async (req, res) => {
+router.post('/', auth, async (req, res) => {
   try {
     const { name, description, type } = req.body;
     if (!name) {
@@ -19,7 +19,7 @@ router.post('/rooms', auth, async (req, res) => {
 });
 
 // Rota para listar salas
-router.get('/rooms', auth, async (req, res) => {
+router.get('/', auth, async (req, res) => {
   try {
     const rooms = await roomService.getRooms(req.user.id);
     res.json(rooms);
@@ -30,7 +30,7 @@ router.get('/rooms', auth, async (req, res) => {
 });
 
 // Rota para obter uma sala específica por ID
-router.get('/rooms/:id', auth, async (req, res) => {
+router.get('/:id', auth, async (req, res) => {
   try {
     const room = await roomService.getRoomById(req.params.id);
     if (!room) {
@@ -48,7 +48,7 @@ router.get('/rooms/:id', auth, async (req, res) => {
 });
 
 // Rota para entrar em uma sala
-router.post('/rooms/:id/join', auth, async (req, res) => {
+router.post('/:id/join', auth, async (req, res) => {
   try {
     const room = await roomService.joinRoom(req.params.id, req.user.id);
     res.json(room);
@@ -59,7 +59,7 @@ router.post('/rooms/:id/join', auth, async (req, res) => {
 });
 
 // Rota para sair de uma sala
-router.post('/rooms/:id/leave', auth, async (req, res) => {
+router.post('/:id/leave', auth, async (req, res) => {
   try {
     const room = await roomService.leaveRoom(req.params.id, req.user.id);
     res.json(room);
@@ -70,7 +70,7 @@ router.post('/rooms/:id/leave', auth, async (req, res) => {
 });
 
 // Rota para encontrar ou criar uma sala de mensagem direta
-router.post('/rooms/direct', auth, async (req, res) => {
+router.post('/direct', auth, async (req, res) => {
   try {
     const { targetUserId } = req.body;
     if (!targetUserId) {

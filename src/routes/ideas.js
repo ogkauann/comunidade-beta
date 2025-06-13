@@ -1,6 +1,14 @@
 const express = require('express')
 const router = express.Router()
 const Idea = require('../models/Idea')
+const auth = require('../middleware/auth') // Importar o middleware de autenticação
+const { apiLimiter } = require('../middleware/rateLimit'); // Importar apiLimiter
+
+// Aplicar middleware de autenticação a todas as rotas de ideias
+router.use(auth)
+
+// Aplicar apiLimiter a todas as rotas de ideias
+router.use(apiLimiter)
 
 // Listar todas as ideias
 router.get('/', async (req, res) => {
@@ -15,7 +23,7 @@ router.get('/', async (req, res) => {
 // Criar nova ideia
 router.post('/', async (req, res) => {
   const idea = new Idea({
-    autor: req.body.autor,
+    autor: req.user._id, // Usar o ID do usuário autenticado
     titulo: req.body.titulo,
     descricao: req.body.descricao,
     salaChatId: `chat_${Date.now()}`,
@@ -49,6 +57,10 @@ router.patch('/:id', async (req, res) => {
   try {
     const idea = await Idea.findById(req.params.id)
     if (idea) {
+      // Verificar se o usuário é o autor da ideia para permitir a atualização
+      if (idea.autor.toString() !== req.user._id.toString()) {
+        return res.status(403).json({ message: 'Não autorizado a editar esta ideia' })
+      }
       Object.assign(idea, req.body)
       const updatedIdea = await idea.save()
       res.json(updatedIdea)
@@ -65,7 +77,11 @@ router.delete('/:id', async (req, res) => {
   try {
     const idea = await Idea.findById(req.params.id)
     if (idea) {
-      await idea.remove()
+      // Verificar se o usuário é o autor da ideia para permitir a exclusão
+      if (idea.autor.toString() !== req.user._id.toString()) {
+        return res.status(403).json({ message: 'Não autorizado a deletar esta ideia' })
+      }
+      await idea.deleteOne()
       res.json({ message: 'Ideia deletada' })
     } else {
       res.status(404).json({ message: 'Ideia não encontrada' })
