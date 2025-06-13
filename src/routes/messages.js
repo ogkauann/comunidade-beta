@@ -1,24 +1,63 @@
 const express = require('express')
 const router = express.Router()
 const Message = require('../models/Message')
+const validateMessage = require('../middleware/validateMessage')
+const auth = require('../middleware/auth')
 
-// Listar mensagens de uma sala
+// Middleware de autenticação para todas as rotas
+router.use(auth)
+
+// Listar mensagens de uma sala com paginação
 router.get('/:chatId', async (req, res) => {
   try {
+    const page = parseInt(req.query.page) || 1
+    const limit = parseInt(req.query.limit) || 20
+    const skip = (page - 1) * limit
+
     const messages = await Message.find({ chatId: req.params.chatId })
       .populate('remetente', 'nome')
-      .sort({ timestamp: 1 })
+      .sort({ timestamp: -1 })
+      .skip(skip)
+      .limit(limit)
+
+    const total = await Message.countDocuments({ chatId: req.params.chatId })
+
+    res.json({
+      messages,
+      pagination: {
+        total,
+        page,
+        pages: Math.ceil(total / limit)
+      }
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// Buscar mensagens
+router.get('/search/:chatId', async (req, res) => {
+  try {
+    const { query } = req.query
+    const messages = await Message.find({
+      chatId: req.params.chatId,
+      mensagem: { $regex: query, $options: 'i' }
+    })
+      .populate('remetente', 'nome')
+      .sort({ timestamp: -1 })
+      .limit(20)
+
     res.json(messages)
   } catch (error) {
-    res.status(500).json({ message: error.message })
+    next(error)
   }
 })
 
 // Enviar nova mensagem
-router.post('/', async (req, res) => {
+router.post('/', validateMessage, async (req, res) => {
   const message = new Message({
     chatId: req.body.chatId,
-    remetente: req.body.remetente,
+    remetente: req.user._id, // Usando o ID do usuário autenticado
     mensagem: req.body.mensagem,
     tipo: req.body.tipo || 'texto',
     arquivoUrl: req.body.arquivoUrl
@@ -30,7 +69,31 @@ router.post('/', async (req, res) => {
       .populate('remetente', 'nome')
     res.status(201).json(populatedMessage)
   } catch (error) {
-    res.status(400).json({ message: error.message })
+    next(error)
+  }
+})
+
+// Editar mensagem
+router.patch('/:id', async (req, res) => {
+  try {
+    const message = await Message.findById(req.params.id)
+    
+    if (!message) {
+      return res.status(404).json({ message: 'Mensagem não encontrada' })
+    }
+
+    // Verificar se o usuário é o autor da mensagem
+    if (message.remetente.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Não autorizado a editar esta mensagem' })
+    }
+
+    message.mensagem = req.body.mensagem
+    message.editada = true
+    const updatedMessage = await message.save()
+    
+    res.json(updatedMessage)
+  } catch (error) {
+    next(error)
   }
 })
 
@@ -38,37 +101,49 @@ router.post('/', async (req, res) => {
 router.post('/:id/reactions', async (req, res) => {
   try {
     const message = await Message.findById(req.params.id)
-    if (message) {
-      const reaction = {
-        usuario: req.body.usuario,
-        emoji: req.body.emoji
-      }
-      message.reacoes.push(reaction)
-      const updatedMessage = await message.save()
-      res.json(updatedMessage)
-    } else {
-      res.status(404).json({ message: 'Mensagem não encontrada' })
+    if (!message) {
+      return res.status(404).json({ message: 'Mensagem não encontrada' })
     }
+
+    // Verificar se o usuário já reagiu com este emoji
+    const existingReaction = message.reacoes.find(
+      r => r.usuario.toString() === req.user._id.toString() && r.emoji === req.body.emoji
+    )
+
+    if (existingReaction) {
+      return res.status(400).json({ message: 'Você já reagiu com este emoji' })
+    }
+
+    const reaction = {
+      usuario: req.user._id,
+      emoji: req.body.emoji
+    }
+    
+    message.reacoes.push(reaction)
+    const updatedMessage = await message.save()
+    res.json(updatedMessage)
   } catch (error) {
-    res.status(400).json({ message: error.message })
+    next(error)
   }
 })
 
 // Remover reação de uma mensagem
-router.delete('/:id/reactions/:userId', async (req, res) => {
+router.delete('/:id/reactions/:emoji', async (req, res) => {
   try {
     const message = await Message.findById(req.params.id)
-    if (message) {
-      message.reacoes = message.reacoes.filter(
-        reaction => reaction.usuario.toString() !== req.params.userId
-      )
-      const updatedMessage = await message.save()
-      res.json(updatedMessage)
-    } else {
-      res.status(404).json({ message: 'Mensagem não encontrada' })
+    if (!message) {
+      return res.status(404).json({ message: 'Mensagem não encontrada' })
     }
+
+    message.reacoes = message.reacoes.filter(
+      reaction => !(reaction.usuario.toString() === req.user._id.toString() && 
+                   reaction.emoji === req.params.emoji)
+    )
+    
+    const updatedMessage = await message.save()
+    res.json(updatedMessage)
   } catch (error) {
-    res.status(400).json({ message: error.message })
+    next(error)
   }
 })
 
@@ -76,14 +151,19 @@ router.delete('/:id/reactions/:userId', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     const message = await Message.findById(req.params.id)
-    if (message) {
-      await message.remove()
-      res.json({ message: 'Mensagem deletada' })
-    } else {
-      res.status(404).json({ message: 'Mensagem não encontrada' })
+    if (!message) {
+      return res.status(404).json({ message: 'Mensagem não encontrada' })
     }
+
+    // Verificar se o usuário é o autor da mensagem
+    if (message.remetente.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Não autorizado a deletar esta mensagem' })
+    }
+
+    await message.deleteOne()
+    res.json({ message: 'Mensagem deletada com sucesso' })
   } catch (error) {
-    res.status(500).json({ message: error.message })
+    next(error)
   }
 })
 

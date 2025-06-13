@@ -8,7 +8,7 @@ class ModerationService {
   async verificarConteudo(texto) {
     // Aqui você pode integrar com serviços de moderação de conteúdo
     // como Google Cloud Content Moderation ou implementar suas próprias regras
-    const palavrasProibidas = ['palavrao1', 'palavrao2']; // Exemplo
+    const palavrasProibidas = ['bocão', 'boca']; // Exemplo
     return palavrasProibidas.some(palavra => texto.toLowerCase().includes(palavra));
   }
 

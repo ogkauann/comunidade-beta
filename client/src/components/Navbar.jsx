@@ -1,47 +1,91 @@
-import { Box, Flex, Button, Heading, Spacer, useColorModeValue } from '@chakra-ui/react'
-import { Link as RouterLink } from 'react-router-dom'
-import { FaHome, FaSignInAlt, FaUserPlus } from 'react-icons/fa'
+import React from 'react';
+import { Box, Flex, Link, Button, Text, HStack, useToast } from '@chakra-ui/react';
+import { Link as RouterLink, useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext.jsx';
 
-const Navbar = () => {
-  const bg = useColorModeValue('white', 'gray.800')
-  const borderColor = useColorModeValue('gray.200', 'gray.700')
+const NavLink = ({ children, to }) => (
+  <Link
+    as={RouterLink}
+    to={to}
+    px={2}
+    py={1}
+    rounded={'md'}
+    _hover={{
+      textDecoration: 'none',
+      bg: 'teal.700',
+    }}
+    color="white"
+  >
+    {children}
+  </Link>
+);
+
+function Navbar() {
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+  const toast = useToast();
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      toast({
+        title: 'Logout realizado.',
+        description: 'Você foi desconectado com sucesso.',
+        status: 'success',
+        duration: 3000,
+        isClosable: true,
+      });
+      navigate('/login');
+    } catch (error) {
+      console.error('Erro ao fazer logout:', error);
+      toast({
+        title: 'Erro ao fazer logout.',
+        description: 'Não foi possível desconectar. Tente novamente.',
+        status: 'error',
+        duration: 5000,
+        isClosable: true,
+      });
+    }
+  };
 
   return (
-    <Box bg={bg} px={4} borderBottom="1px" borderColor={borderColor}>
-      <Flex h={16} alignItems="center" maxW="1200px" mx="auto">
-        <Heading size="md" as={RouterLink} to="/" _hover={{ textDecoration: 'none' }}>
-          Comunidade Chat
-        </Heading>
-        <Spacer />
-        <Flex gap={4}>
-          <Button
-            as={RouterLink}
-            to="/"
-            leftIcon={<FaHome />}
-            variant="ghost"
-          >
-            Home
-          </Button>
-          <Button
-            as={RouterLink}
-            to="/login"
-            leftIcon={<FaSignInAlt />}
-            variant="ghost"
-          >
-            Login
-          </Button>
-          <Button
-            as={RouterLink}
-            to="/register"
-            leftIcon={<FaUserPlus />}
-            colorScheme="blue"
-          >
-            Registrar
-          </Button>
+    <Box bg="teal.500" px={4}>
+      <Flex h={16} alignItems="center" justifyContent="space-between">
+        <Box>
+          <NavLink to="/">Home</NavLink>
+          {user && (
+            <NavLink to="/chat/general">Chat</NavLink>
+          )}
+          {user && (
+            <NavLink to="/rooms">Salas</NavLink>
+          )}
+        </Box>
+        <Flex alignItems={'center'}>
+          {user ? (
+            <HStack>
+              <Text color="white" mr={4}>Bem-vindo, <Link as={RouterLink} to="/profile" fontWeight="bold" _hover={{ textDecoration: 'underline' }}>{user.nome}</Link></Text>
+              <Button colorScheme={'teal'} variant={'outline'} size={'sm'} color="white" _hover={{ bg: 'teal.400' }} onClick={handleLogout}>
+                Logout
+              </Button>
+            </HStack>
+          ) : (
+            <>
+              <Link as={RouterLink} to="/login">
+                <Button colorScheme={'teal'} variant={'solid'} size={'sm'} mr={4}>
+                  Login
+                </Button>
+              </Link>
+              <Link as={RouterLink} to="/register">
+                <Button colorScheme={'teal'} variant={'outline'} size={'sm'} color="white" _hover={{ bg: 'teal.400' }}>
+                  Register
+                </Button>
+              </Link>
+            </>
+          )}
         </Flex>
       </Flex>
     </Box>
-  )
+  );
 }
 
-export default Navbar 
+export default Navbar; 

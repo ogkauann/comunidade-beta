@@ -8,12 +8,17 @@ const compression = require('compression');
 const morgan = require('morgan');
 const path = require('path');
 require('dotenv').config();
+const jwt = require('jsonwebtoken');
+const User = require('./models/User');
+const Message = require('./models/Message');
+const Room = require('./models/Room');
 
 const logger = require('./config/logger');
 const { apiLimiter } = require('./middleware/rateLimit');
 const NotificationService = require('./services/NotificationService');
 const ModerationService = require('./services/ModerationService');
 const StatisticsService = require('./services/StatisticsService');
+const roomService = require('./services/roomService');
 
 const app = express();
 const server = http.createServer(app);
@@ -44,39 +49,65 @@ mongoose.connect(process.env.MONGODB_URI)
 const authRouter = require('./routes/auth');
 const ideasRouter = require('./routes/ideas');
 const messagesRouter = require('./routes/messages');
+const roomRoutes = require('./routes/roomRoutes');
+const userRoutes = require('./routes/userRoutes');
 
 app.use('/api/auth', authRouter);
 app.use('/api/ideas', ideasRouter);
 app.use('/api/messages', messagesRouter);
+app.use('/api/rooms', roomRoutes);
+app.use('/api/users', userRoutes);
 
-// Configuração do Socket.io
+io.use(async (socket, next) => {
+  const token = socket.handshake.auth.token;
+
+  if (!token) {
+    return next(new Error('Autenticação necessária: Token não fornecido.'));
+  }
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await User.findById(decoded.userId);
+
+    if (!user) {
+      return next(new Error('Autenticação necessária: Usuário não encontrado.'));
+    }
+
+    socket.user = user;
+    socket.userId = user._id.toString();
+    socket.token = token;
+    socket.userName = user.nome;
+
+    next();
+  } catch (error) {
+    return next(new Error('Autenticação necessária: Token inválido ou expirado.'));
+  }
+});
+
 io.on('connection', (socket) => {
-  logger.info('Novo usuário conectado:', socket.id);
+  logger.info('Novo usuário conectado:', socket.id, 'Nome:', socket.userName);
 
-  // Entrar em uma sala de chat
   socket.on('join_room', async (roomId) => {
     socket.join(roomId);
-    logger.info(`Usuário ${socket.id} entrou na sala ${roomId}`);
+    logger.info(`Usuário ${socket.userName} (${socket.id}) entrou na sala ${roomId}`);
 
-    // Atualizar estatísticas
     try {
       await StatisticsService.atualizarEstatisticas(socket.userId, 'entrada_sala');
+      const messages = await roomService.getRoomMessages(roomId, socket.userId);
+      socket.emit('historical_messages', messages);
     } catch (error) {
       logger.error('Erro ao atualizar estatísticas:', error);
     }
   });
 
-  // Enviar mensagem
   socket.on('send_message', async (data) => {
     try {
-      // Verificar conteúdo
       const conteudoInapropriado = await ModerationService.verificarConteudo(data.message);
       if (conteudoInapropriado) {
         socket.emit('error', { message: 'Conteúdo inapropriado detectado' });
         return;
       }
 
-      // Salvar mensagem no banco
       const response = await fetch('http://localhost:3000/api/messages', {
         method: 'POST',
         headers: {
@@ -93,19 +124,17 @@ io.on('connection', (socket) => {
       
       const savedMessage = await response.json();
       
-      // Emitir mensagem para todos na sala
       io.to(data.roomId).emit('receive_message', {
         ...savedMessage,
+        remetente: { _id: socket.userId, nome: socket.userName },
         timestamp: new Date()
       });
 
-      // Notificar usuários
       await NotificationService.notificarNovaMensagem(
         { _id: data.roomId, titulo: data.roomTitle },
         savedMessage
       );
 
-      // Atualizar estatísticas
       await StatisticsService.atualizarEstatisticas(socket.userId, 'mensagem');
     } catch (error) {
       logger.error('Erro ao processar mensagem:', error);
@@ -113,15 +142,14 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Status de digitação
   socket.on('typing', (data) => {
     socket.to(data.roomId).emit('user_typing', {
-      userId: socket.id,
+      userId: socket.userId,
+      userName: socket.userName,
       isTyping: data.isTyping
     });
   });
 
-  // Reação a mensagem
   socket.on('reaction', async (data) => {
     try {
       const response = await fetch(`http://localhost:3000/api/messages/${data.messageId}/reactions`, {
@@ -139,14 +167,12 @@ io.on('connection', (socket) => {
       const updatedMessage = await response.json();
       io.to(data.roomId).emit('message_updated', updatedMessage);
 
-      // Notificar reação
       await NotificationService.notificarReacao(
         updatedMessage,
         { _id: socket.userId, nome: socket.userName },
         data.emoji
       );
 
-      // Atualizar estatísticas
       await StatisticsService.atualizarEstatisticas(updatedMessage.remetente, 'reacao');
     } catch (error) {
       logger.error('Erro ao processar reação:', error);
@@ -154,7 +180,6 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Reportar mensagem
   socket.on('report_message', async (data) => {
     try {
       await ModerationService.reportarMensagem(
@@ -170,7 +195,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
-    logger.info('Usuário desconectado:', socket.id);
+    logger.info('Usuário desconectado:', socket.id, 'Nome:', socket.userName);
   });
 });
 

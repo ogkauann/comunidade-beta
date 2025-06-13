@@ -5,47 +5,30 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const auth = require('../middleware/auth');
 
-// Registrar usuário
+// Registrar novo usuário
 router.post('/register', async (req, res) => {
   try {
     const { nome, email, senha } = req.body;
 
-    // Verificar se usuário já existe
-    const userExists = await User.findOne({ email });
-    if (userExists) {
-      return res.status(400).json({ message: 'Email já cadastrado' });
+    // Verificar se o email já está em uso
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({ message: 'Email já está em uso' });
     }
 
-    // Criar hash da senha
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(senha, salt);
-
-    // Criar usuário
+    // Criar novo usuário
     const user = new User({
       nome,
       email,
-      senha: hashedPassword
+      senha
     });
 
     await user.save();
+    const token = await user.gerarAuthToken();
 
-    // Gerar token
-    const token = jwt.sign(
-      { id: user._id },
-      process.env.JWT_SECRET,
-      { expiresIn: '7d' }
-    );
-
-    res.status(201).json({
-      token,
-      user: {
-        id: user._id,
-        nome: user.nome,
-        email: user.email
-      }
-    });
+    res.status(201).json({ user, token });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.status(400).json({ message: error.message });
   }
 });
 
@@ -54,66 +37,52 @@ router.post('/login', async (req, res) => {
   try {
     const { email, senha } = req.body;
 
-    // Verificar se usuário existe
+    // Buscar usuário
     const user = await User.findOne({ email });
     if (!user) {
-      return res.status(400).json({ message: 'Credenciais inválidas' });
+      return res.status(401).json({ message: 'Email ou senha inválidos' });
     }
 
     // Verificar senha
-    const isMatch = await bcrypt.compare(senha, user.senha);
-    if (!isMatch) {
-      return res.status(400).json({ message: 'Credenciais inválidas' });
+    const senhaValida = await user.verificarSenha(senha);
+    if (!senhaValida) {
+      return res.status(401).json({ message: 'Email ou senha inválidos' });
     }
 
     // Gerar token
-    const token = jwt.sign(
-      { id: user._id },
-      process.env.JWT_SECRET,
-      { expiresIn: '7d' }
-    );
+    const token = await user.gerarAuthToken();
 
-    res.json({
-      token,
-      user: {
-        id: user._id,
-        nome: user.nome,
-        email: user.email
-      }
-    });
+    res.json({ user, token });
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// Logout
+router.post('/logout', auth, async (req, res) => {
+  try {
+    req.user.tokens = req.user.tokens.filter(token => token.token !== req.token);
+    await req.user.save();
+    res.json({ message: 'Logout realizado com sucesso' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Logout de todos os dispositivos
+router.post('/logoutAll', auth, async (req, res) => {
+  try {
+    req.user.tokens = [];
+    await req.user.save();
+    res.json({ message: 'Logout de todos os dispositivos realizado com sucesso' });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 });
 
 // Obter perfil do usuário
-router.get('/profile', auth, async (req, res) => {
-  try {
-    const user = await User.findById(req.user.id).select('-senha');
-    res.json(user);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-});
-
-// Atualizar perfil
-router.patch('/profile', auth, async (req, res) => {
-  const updates = Object.keys(req.body);
-  const allowedUpdates = ['nome', 'email', 'bio', 'avatar'];
-  const isValidOperation = updates.every(update => allowedUpdates.includes(update));
-
-  if (!isValidOperation) {
-    return res.status(400).json({ message: 'Atualizações inválidas' });
-  }
-
-  try {
-    const user = await User.findById(req.user.id);
-    updates.forEach(update => user[update] = req.body[update]);
-    await user.save();
-    res.json(user);
-  } catch (error) {
-    res.status(400).json({ message: error.message });
-  }
+router.get('/me', auth, async (req, res) => {
+  res.json(req.user);
 });
 
 module.exports = router; 

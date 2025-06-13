@@ -1,4 +1,6 @@
 const mongoose = require('mongoose');
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
 
 const userSchema = new mongoose.Schema({
   nome: {
@@ -14,6 +16,12 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  tokens: [{
+    token: {
+      type: String,
+      required: true
+    }
+  }],
   bio: String,
   avatar: String,
   status: {
@@ -97,6 +105,28 @@ const userSchema = new mongoose.Schema({
   timestamps: true
 });
 
+// Método para gerar token de autenticação
+userSchema.methods.gerarAuthToken = async function() {
+  const user = this;
+  const token = jwt.sign(
+    { userId: user._id.toString() },
+    process.env.JWT_SECRET,
+    { expiresIn: '7d' }
+  );
+  
+  user.tokens = user.tokens.concat({ token });
+  await user.save();
+  
+  return token;
+};
+
+// Método para remover token
+userSchema.methods.removerToken = async function(token) {
+  const user = this;
+  user.tokens = user.tokens.filter(t => t.token !== token);
+  await user.save();
+};
+
 // Método para atualizar última atividade
 userSchema.methods.atualizarAtividade = async function() {
   this.ultimaAtividade = new Date();
@@ -115,6 +145,30 @@ userSchema.methods.marcarNotificacoesComoLidas = async function() {
     notificacao.lida = true;
   });
   await this.save();
+};
+
+// Método para criptografar senha antes de salvar
+userSchema.pre('save', async function(next) {
+  const user = this;
+  
+  if (user.isModified('senha')) {
+    user.senha = await bcrypt.hash(user.senha, 8);
+  }
+  
+  next();
+});
+
+// Método para verificar senha
+userSchema.methods.verificarSenha = async function(senha) {
+  return bcrypt.compare(senha, this.senha);
+};
+
+// Método para remover dados sensíveis ao enviar para o cliente
+userSchema.methods.toJSON = function() {
+  const user = this.toObject();
+  delete user.senha;
+  delete user.tokens;
+  return user;
 };
 
 module.exports = mongoose.model('User', userSchema); 
